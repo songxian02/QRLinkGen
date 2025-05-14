@@ -46,6 +46,8 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
+
+            implementation("network.chaintech:qr-kit:1.0.8")
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
