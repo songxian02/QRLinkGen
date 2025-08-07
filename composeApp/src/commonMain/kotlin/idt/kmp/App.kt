@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -18,6 +19,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -47,12 +49,33 @@ fun App() {
 
     MaterialTheme(colors = navyTheme) {
         var userInput by remember { mutableStateOf("") }
+        var qrCodeUrl by remember { mutableStateOf("") }
         var shouldGenerateQR by remember { mutableStateOf(false) }
         var isGenerating by remember { mutableStateOf(false) }
 
+        // URL validation function
+        fun isValidUrl(url: String): Boolean {
+            return try {
+                val trimmedUrl = url.trim()
+                // Check if it's a valid URL pattern
+                val urlPattern = Regex(
+                    "^(https?://)?" + // Optional protocol
+                            "([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}" + // Domain
+                            "(/.*)?$" // Optional path
+                )
+                urlPattern.matches(trimmedUrl) ||
+                        // Also allow simple domain patterns like "google.com"
+                        Regex("^[a-zA-Z0-9-]+\\.[a-zA-Z]{2,}(/.*)?$").matches(trimmedUrl)
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        val isUrlValid = isValidUrl(userInput)
+
         // Animation states
         val buttonScale by animateFloatAsState(
-            targetValue = if (userInput.isNotBlank()) 1f else 0.95f,
+            targetValue = if (isUrlValid) 1f else 0.95f,
             animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
         )
 
@@ -91,7 +114,6 @@ fun App() {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-
                         Text(
                             text = "QR Code Generator",
                             style = MaterialTheme.typography.h4.copy(
@@ -120,16 +142,34 @@ fun App() {
                         OutlinedTextField(
                             value = userInput,
                             onValueChange = { userInput = it },
-                            label = { Text("Enter URL or text", color = LightBlue) },
-                            placeholder = { Text("https://example.com", color = Color.Gray) },
+                            label = { Text("Enter valid URL", color = LightBlue) },
+                            placeholder = { Text("https://google.com", color = Color.Gray) },
                             modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Uri,
+                                imeAction = ImeAction.Go
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onGo = {
+                                    if (isUrlValid && !isGenerating) {
+                                        isGenerating = true
+                                        qrCodeUrl = userInput
+                                        shouldGenerateQR = true
+                                        kotlinx.coroutines.GlobalScope.launch {
+                                            kotlinx.coroutines.delay(300)
+                                            isGenerating = false
+                                        }
+                                    }
+                                }
+                            ),
                             singleLine = true,
+                            isError = userInput.isNotEmpty() && !isUrlValid,
                             colors = TextFieldDefaults.outlinedTextFieldColors(
                                 textColor = Color.White,
-                                focusedBorderColor = LightNavy,
-                                unfocusedBorderColor = NavyAccent,
-                                cursorColor = LightNavy
+                                focusedBorderColor = if (userInput.isNotEmpty() && !isUrlValid) Color.Red else LightNavy,
+                                unfocusedBorderColor = if (userInput.isNotEmpty() && !isUrlValid) Color.Red else NavyAccent,
+                                cursorColor = LightNavy,
+                                errorBorderColor = Color.Red
                             ),
                             trailingIcon = {
                                 if (userInput.isNotEmpty()) {
@@ -137,6 +177,7 @@ fun App() {
                                         onClick = {
                                             userInput = ""
                                             shouldGenerateQR = false
+                                            qrCodeUrl = ""
                                         }
                                     ) {
                                         Icon(
@@ -148,6 +189,16 @@ fun App() {
                                 }
                             }
                         )
+
+                        // Error message for invalid URL
+                        if (userInput.isNotEmpty() && !isUrlValid) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Please enter a valid URL (e.g., https://google.com)",
+                                color = Color.Red,
+                                style = MaterialTheme.typography.caption
+                            )
+                        }
                     }
                 }
 
@@ -156,15 +207,17 @@ fun App() {
                     onClick = {
                         if (!isGenerating) {
                             isGenerating = true
-                            shouldGenerateQR = userInput.isNotBlank()
+                            // Update QR code URL immediately
+                            qrCodeUrl = userInput
+                            shouldGenerateQR = isUrlValid
                             // Simulate generation delay for better UX
                             kotlinx.coroutines.GlobalScope.launch {
-                                kotlinx.coroutines.delay(500)
+                                kotlinx.coroutines.delay(300) // Reduced delay since we update immediately
                                 isGenerating = false
                             }
                         }
                     },
-                    enabled = userInput.isNotBlank() && !isGenerating,
+                    enabled = isUrlValid && !isGenerating,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
@@ -195,7 +248,7 @@ fun App() {
 
                 // QR Code Display with Animation
                 AnimatedVisibility(
-                    visible = shouldGenerateQR && userInput.isNotBlank(),
+                    visible = shouldGenerateQR && qrCodeUrl.isNotEmpty(),
                     enter = scaleIn(
                         animationSpec = spring(
                             dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -216,24 +269,27 @@ fun App() {
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(24.dp)
                         ) {
-                            QRCodeImage(
-                                url = userInput,
-                                contentScale = ContentScale.Fit,
-                                contentDescription = "Generated QR Code",
-                                modifier = Modifier
-                                    .size(220.dp)
-                                    .padding(8.dp),
-                                onSuccess = { qrImage ->
-                                    println("QR Code generated successfully for: $userInput")
-                                }
-                            )
+                            // Add key to force recomposition when URL changes
+                            key(qrCodeUrl) {
+                                QRCodeImage(
+                                    url = qrCodeUrl,
+                                    contentScale = ContentScale.Fit,
+                                    contentDescription = "Generated QR Code for $qrCodeUrl",
+                                    modifier = Modifier
+                                        .size(220.dp)
+                                        .padding(8.dp),
+                                    onSuccess = { qrImage ->
+                                        println("QR Code generated successfully for: $qrCodeUrl")
+                                    }
+                                )
+                            }
                         }
                     }
                 }
 
                 // URL Display
                 AnimatedVisibility(
-                    visible = shouldGenerateQR && userInput.isNotBlank(),
+                    visible = shouldGenerateQR && qrCodeUrl.isNotEmpty(),
                     enter = slideInVertically(
                         initialOffsetY = { it },
                         animationSpec = tween(600)
@@ -245,7 +301,7 @@ fun App() {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "QR Code for: $userInput",
+                            text = "QR Code for: $qrCodeUrl",
                             style = MaterialTheme.typography.body2.copy(
                                 color = LightBlue,
                                 fontWeight = FontWeight.Medium
